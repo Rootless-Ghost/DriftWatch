@@ -382,7 +382,8 @@ def api_sigmaforge_rules():
             return jsonify({"success": True, "rules": data.get("rules", []), "source": "sigmaforge"})
         return jsonify({"success": False, "error": f"SigmaForge returned {resp.status_code}", "rules": []})
     except Exception as exc:
-        return jsonify({"success": False, "error": str(exc), "rules": []})
+        logger.exception("Failed to fetch rules from SigmaForge")
+        return jsonify({"success": False, "error": "Failed to fetch rules from SigmaForge", "rules": []})
 
 
 # ── CLI entry point ───────────────────────────────────────────────────────────
