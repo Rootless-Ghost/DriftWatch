@@ -193,7 +193,7 @@ def api_analyze():
         return jsonify({"success": True, "report": result})
     except Exception as exc:
         logger.error("Analysis error: %s", exc, exc_info=True)
-        return jsonify({"success": False, "error": str(exc)}), 500
+        return jsonify({"success": False, "error": "An internal error has occurred"}), 500
 
 
 def _parse_rules_from_upload() -> list[dict]:
