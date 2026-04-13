@@ -156,8 +156,20 @@ def api_analyze():
     else:
         # ── JSON body ─────────────────────────────────────────────────────────
         body        = request.get_json(silent=True) or {}
-        rules_list  = body.get("rules") or []
-        events_list = body.get("events") or []
+        # Accept either pre-parsed lists or raw YAML/JSON strings from the web UI
+        if body.get("rules_yaml"):
+            rules_list = _split_sigma_yaml(body["rules_yaml"])
+        else:
+            rules_list = body.get("rules") or []
+        if body.get("events_json"):
+            events_list = _parse_events_json(body["events_json"])
+        else:
+            events_list = body.get("events") or []
+        if body.get("overfire_threshold") is not None:
+            try:
+                _config.setdefault("analysis", {})["overfire_threshold"] = float(body["overfire_threshold"])
+            except (TypeError, ValueError):
+                pass
         window      = int(body.get("time_window_hours", cfg_analysis.get("default_window_hours", 168)))
         label       = str(body.get("label", "")).strip()
         save        = bool(body.get("save", auto_save))
@@ -170,14 +182,18 @@ def api_analyze():
         events_list = events_list[:max_events]
         logger.warning("Event list truncated to %d", max_events)
 
-    result = _engine.analyze(
-        rules=rules_list,
-        events=events_list,
-        time_window_hours=window,
-        label=label,
-        save=save,
-    )
-    return jsonify(result)
+    try:
+        result = _engine.analyze(
+            rules=rules_list,
+            events=events_list,
+            time_window_hours=window,
+            label=label,
+            save=save,
+        )
+        return jsonify({"success": True, "report": result})
+    except Exception as exc:
+        logger.error("Analysis error: %s", exc, exc_info=True)
+        return jsonify({"success": False, "error": str(exc)}), 500
 
 
 def _parse_rules_from_upload() -> list[dict]:
