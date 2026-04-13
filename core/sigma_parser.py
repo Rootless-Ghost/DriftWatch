@@ -84,12 +84,12 @@ def parse_sigma_rule(yaml_text: str) -> dict:
         det = rule.get("detection", {}) or {}
         result["detection"] = _normalise_detection(det)
 
-    except SigmaParseError as exc:
-        result["_parse_error"] = str(exc)
-        logger.warning("Sigma parse error: %s", exc)
-    except Exception as exc:
-        result["_parse_error"] = f"Unexpected parse error: {exc}"
-        logger.warning("Sigma unexpected parse error: %s", exc)
+    except SigmaParseError:
+        result["_parse_error"] = "Invalid Sigma rule format"
+        logger.exception("Sigma parse error")
+    except Exception:
+        result["_parse_error"] = "Unable to parse Sigma rule"
+        logger.exception("Sigma unexpected parse error")
 
     return result
 
