@@ -1,0 +1,19 @@
+# DriftWatch Configuration
+# Copy this file to config.yaml and adjust as needed.
+
+host: 127.0.0.1
+port: 5008
+debug: false
+
+db_path: ./driftwatch.db
+
+analysis:
+  overfire_threshold: 100.0    # hits/hr above which a rule is "overfiring"
+  default_window_hours: 168    # 7 days
+  max_events: 100000
+  max_rules:  500
+  auto_save:  true             # save every analysis to the report library
+
+integrations:
+  lognorm_url:    http://127.0.0.1:5006
+  sigmaforge_url: http://127.0.0.1:5000

@@ -1,0 +1,257 @@
+{% extends "base.html" %}
+{% block title %}Drift Analyzer{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">
+        <span class="title-icon">📊</span>
+        Detection Drift Analyzer
+    </h1>
+    <p class="page-subtitle">
+        Upload Sigma rules + ECS-lite events to identify never-fired, overfiring, and healthy detections.
+    </p>
+</div>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<!-- Input form -->
+<div class="input-grid">
+
+    <!-- Rules panel -->
+    <div class="card input-card">
+        <div class="card-header">
+            <div class="card-title-row">
+                <h2 class="card-title">
+                    <span class="card-title-icon">📜</span> Sigma Rules
+                </h2>
+                <button class="btn btn-xs btn-outline" id="loadSigmaForgeBtn" title="Pull from SigmaForge">
+                    ↓ SigmaForge
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="upload-zone" id="rulesDropZone">
+                <div class="upload-icon">⬆</div>
+                <div class="upload-text">Drop Sigma YAML here or</div>
+                <label class="btn btn-secondary btn-sm upload-browse-btn">
+                    Browse File
+                    <input type="file" id="rulesFile" accept=".yml,.yaml" class="hidden-file-input">
+                </label>
+                <div class="upload-hint">Supports single rule or multi-rule file (--- separator)</div>
+            </div>
+            <div class="upload-or">— or paste YAML —</div>
+            <textarea
+                id="rulesYaml"
+                class="form-textarea code-textarea"
+                placeholder="title: Suspicious PowerShell Usage&#10;status: experimental&#10;logsource:&#10;  product: windows&#10;  category: process_creation&#10;detection:&#10;  selection:&#10;    CommandLine|contains:&#10;      - '-enc'&#10;      - 'IEX'&#10;  condition: selection&#10;level: high"
+                rows="14"
+                spellcheck="false"
+            ></textarea>
+            <div id="rulesCounter" class="input-counter">0 rules loaded</div>
+        </div>
+    </div>
+
+    <!-- Events panel -->
+    <div class="card input-card">
+        <div class="card-header">
+            <div class="card-title-row">
+                <h2 class="card-title">
+                    <span class="card-title-icon">📋</span> ECS-lite Events
+                </h2>
+                <span class="card-hint">from LogNorm</span>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="upload-zone" id="eventsDropZone">
+                <div class="upload-icon">⬆</div>
+                <div class="upload-text">Drop events JSON here or</div>
+                <label class="btn btn-secondary btn-sm upload-browse-btn">
+                    Browse File
+                    <input type="file" id="eventsFile" accept=".json,.ndjson" class="hidden-file-input">
+                </label>
+                <div class="upload-hint">JSON array or NDJSON (one event per line)</div>
+            </div>
+            <div class="upload-or">— or paste JSON —</div>
+            <textarea
+                id="eventsJson"
+                class="form-textarea code-textarea"
+                placeholder='[&#10;  {&#10;    "process": {&#10;      "command_line": "powershell.exe -enc JABj...",&#10;      "executable": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"&#10;    },&#10;    "event": { "code": "4688" },&#10;    "host": { "name": "workstation-01" }&#10;  }&#10;]'
+                rows="14"
+                spellcheck="false"
+            ></textarea>
+            <div id="eventsCounter" class="input-counter">0 events loaded</div>
+        </div>
+    </div>
+
+</div>
+
+<!-- Analysis options -->
+<div class="card options-card">
+    <div class="card-body options-row">
+
+        <div class="option-group">
+            <label class="form-label">Time Window</label>
+            <select id="timeWindow" class="form-select option-select">
+                <option value="24">Last 24 hours</option>
+                <option value="72">Last 3 days</option>
+                <option value="168" selected>Last 7 days</option>
+                <option value="336">Last 14 days</option>
+                <option value="720">Last 30 days</option>
+                <option value="0">All events (no filter)</option>
+            </select>
+        </div>
+
+        <div class="option-group">
+            <label class="form-label">Report Label</label>
+            <input type="text" id="reportLabel" class="form-input option-input"
+                   placeholder="e.g. Weekly drift review">
+        </div>
+
+        <div class="option-group">
+            <label class="form-label">Overfire Threshold</label>
+            <div class="threshold-input-wrap">
+                <input type="number" id="overfireThreshold" class="form-input option-input"
+                       value="100" min="1" max="100000">
+                <span class="threshold-unit">hits/hr</span>
+            </div>
+        </div>
+
+        <div class="form-actions options-actions">
+            <button id="analyzeBtn" class="btn btn-primary btn-analyze">
+                <span class="btn-icon">📊</span>
+                Run Analysis
+            </button>
+            <div id="analyzeStatus" class="analyze-status hidden">
+                <div class="spinner"></div>
+                <span id="analyzeStatusText">Analyzing…</span>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<!-- Results -->
+<div id="resultsSection" class="hidden">
+
+    <!-- Summary bar -->
+    <div class="summary-bar card">
+        <div class="summary-stat">
+            <div class="stat-value" id="sumTotal">—</div>
+            <div class="stat-label">Total Rules</div>
+        </div>
+        <div class="summary-divider"></div>
+        <div class="summary-stat stat-never">
+            <div class="stat-value" id="sumNever">—</div>
+            <div class="stat-label">Never Fired</div>
+        </div>
+        <div class="summary-divider"></div>
+        <div class="summary-stat stat-over">
+            <div class="stat-value" id="sumOver">—</div>
+            <div class="stat-label">Overfiring</div>
+        </div>
+        <div class="summary-divider"></div>
+        <div class="summary-stat stat-healthy">
+            <div class="stat-value" id="sumHealthy">—</div>
+            <div class="stat-label">Healthy</div>
+        </div>
+        <div class="summary-divider"></div>
+        <div class="summary-stat">
+            <div class="stat-value" id="sumCoverage">—</div>
+            <div class="stat-label">Coverage</div>
+        </div>
+        <div class="summary-divider"></div>
+        <div class="summary-stat">
+            <div class="stat-value" id="sumNoise">—</div>
+            <div class="stat-label">Noise Score</div>
+        </div>
+        <div class="summary-divider"></div>
+        <div class="summary-stat">
+            <div class="stat-value" id="sumHits">—</div>
+            <div class="stat-label">Total Hits</div>
+        </div>
+        <div class="summary-actions">
+            <button class="btn btn-sm btn-secondary" id="exportJsonBtn">⬇ JSON</button>
+            <button class="btn btn-sm btn-secondary" id="exportMdBtn">⬇ Markdown</button>
+            <a id="viewReportBtn" href="#" class="btn btn-sm btn-outline hidden">🔗 Full Report</a>
+        </div>
+    </div>
+
+    <!-- Gap analysis -->
+    <div id="gapCard" class="card gap-card hidden">
+        <div class="card-header">
+            <h3 class="card-title">⚠ Gap Analysis</h3>
+        </div>
+        <div class="card-body gap-body" id="gapBody"></div>
+    </div>
+
+    <!-- 3 panels -->
+    <div class="results-grid">
+
+        <div class="result-panel panel-never">
+            <div class="panel-header">
+                <span class="panel-dot dot-never"></span>
+                <h3 class="panel-title">Never Fired</h3>
+                <span class="panel-count" id="panelNeverCount">0</span>
+            </div>
+            <div class="panel-body" id="panelNever">
+                <div class="panel-empty">No rules in this category</div>
+            </div>
+        </div>
+
+        <div class="result-panel panel-over">
+            <div class="panel-header">
+                <span class="panel-dot dot-over"></span>
+                <h3 class="panel-title">Overfiring</h3>
+                <span class="panel-count" id="panelOverCount">0</span>
+            </div>
+            <div class="panel-body" id="panelOver">
+                <div class="panel-empty">No rules in this category</div>
+            </div>
+        </div>
+
+        <div class="result-panel panel-healthy">
+            <div class="panel-header">
+                <span class="panel-dot dot-healthy"></span>
+                <h3 class="panel-title">Healthy</h3>
+                <span class="panel-count" id="panelHealthyCount">0</span>
+            </div>
+            <div class="panel-body" id="panelHealthy">
+                <div class="panel-empty">No rules in this category</div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<!-- Rule detail modal -->
+<div id="ruleModal" class="modal-overlay hidden">
+    <div class="modal modal-lg">
+        <div class="modal-header">
+            <div>
+                <div class="modal-rule-id" id="modalRuleId"></div>
+                <div class="modal-rule-title" id="modalRuleTitle"></div>
+            </div>
+            <button class="modal-close-btn" id="closeModalBtn">✕</button>
+        </div>
+        <div class="modal-body modal-body-scroll">
+            <div class="modal-tabs">
+                <button class="mtab-btn active" data-mtab="overview">Overview</button>
+                <button class="mtab-btn" data-mtab="events">Matched Events</button>
+                <button class="mtab-btn" data-mtab="suggestions">Tuning Suggestions</button>
+            </div>
+            <div class="mtab-content active" id="mtab-overview">
+                <div id="modalOverview"></div>
+            </div>
+            <div class="mtab-content" id="mtab-events">
+                <div id="modalEvents"></div>
+            </div>
+            <div class="mtab-content" id="mtab-suggestions">
+                <div id="modalSuggestions"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

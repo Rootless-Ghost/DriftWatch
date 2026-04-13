@@ -1,0 +1,280 @@
+{% extends "base.html" %}
+{% block title %}Report — {{ report.label }}{% endblock %}
+
+{% block content %}
+{% set s = report.summary %}
+{% set gap = s.gap_analysis %}
+
+<div class="page-header">
+    <a href="/reports" class="back-link">← Back to Reports</a>
+    <h1 class="page-title">
+        <span class="title-icon">📊</span>
+        {{ report.label or "Drift Report" }}
+    </h1>
+    <div class="page-meta">
+        <span class="meta-badge">{{ report.time_window_hours }}h window</span>
+        <span class="meta-badge">{{ report.event_count | default(0) }} events</span>
+        <span class="meta-date">{{ report.analyzed_at[:19].replace('T',' ') if report.analyzed_at else '' }}</span>
+    </div>
+</div>
+
+<!-- Export bar -->
+<div class="export-bar card">
+    <span class="export-label">Export:</span>
+    <a href="/api/report/{{ report.id }}/export?format=json" class="btn btn-sm btn-secondary">⬇ JSON</a>
+    <a href="/api/report/{{ report.id }}/export?format=markdown" class="btn btn-sm btn-secondary">⬇ Markdown</a>
+    <button class="btn btn-sm btn-outline" onclick="window.print()">🖨 Print</button>
+</div>
+
+<!-- Summary bar -->
+<div class="summary-bar card">
+    <div class="summary-stat">
+        <div class="stat-value">{{ s.total_rules }}</div>
+        <div class="stat-label">Total Rules</div>
+    </div>
+    <div class="summary-divider"></div>
+    <div class="summary-stat stat-never">
+        <div class="stat-value">{{ s.never_fired_count }}</div>
+        <div class="stat-label">Never Fired</div>
+    </div>
+    <div class="summary-divider"></div>
+    <div class="summary-stat stat-over">
+        <div class="stat-value">{{ s.overfiring_count }}</div>
+        <div class="stat-label">Overfiring</div>
+    </div>
+    <div class="summary-divider"></div>
+    <div class="summary-stat stat-healthy">
+        <div class="stat-value">{{ s.healthy_count }}</div>
+        <div class="stat-label">Healthy</div>
+    </div>
+    <div class="summary-divider"></div>
+    <div class="summary-stat">
+        <div class="stat-value">{{ "%.1f"|format(s.coverage_pct) }}%</div>
+        <div class="stat-label">Coverage</div>
+    </div>
+    <div class="summary-divider"></div>
+    <div class="summary-stat">
+        <div class="stat-value">{{ "%.3f"|format(s.noise_score) }}</div>
+        <div class="stat-label">Noise Score</div>
+    </div>
+    <div class="summary-divider"></div>
+    <div class="summary-stat">
+        <div class="stat-value">{{ s.total_matches | default(0) | int | string }}</div>
+        <div class="stat-label">Total Hits</div>
+    </div>
+</div>
+
+<!-- Gap analysis -->
+{% if gap %}
+<div class="card gap-card">
+    <div class="card-header"><h3 class="card-title">⚠ Gap Analysis</h3></div>
+    <div class="card-body gap-body">
+        <div class="gap-stat">
+            <div class="gap-label">Coverage Breadth</div>
+            <div class="gap-value">{{ "%.1f"|format(gap.coverage_breadth) }}% of tactics</div>
+        </div>
+        <div class="gap-stat">
+            <div class="gap-label">Uncovered Tactics</div>
+            <div class="gap-value">
+                {% if gap.uncovered_tactics %}
+                    {% for t in gap.uncovered_tactics %}
+                    <span class="gap-tactic-tag">{{ t }}</span>
+                    {% endfor %}
+                {% else %}
+                    <span class="gap-ok">All tactics covered</span>
+                {% endif %}
+            </div>
+        </div>
+        <div class="gap-stat">
+            <div class="gap-label">Never-fired Rate</div>
+            <div class="gap-value">{{ "%.1f"|format(gap.never_fired_pct) }}%</div>
+        </div>
+        <div class="gap-stat">
+            <div class="gap-label">Overfiring Rate</div>
+            <div class="gap-value">{{ "%.1f"|format(gap.overfiring_pct) }}%</div>
+        </div>
+        {% if gap.low_confidence_rules %}
+        <div class="gap-stat gap-stat--full">
+            <div class="gap-label">High FP Rules</div>
+            <div class="gap-value">
+                {% for r in gap.low_confidence_rules[:5] %}
+                <span class="gap-fp-rule">{{ r.title[:40] }} ({{ "%.0f"|format(r.fp_estimate * 100) }}%)</span>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Results grid -->
+<div class="results-grid">
+
+    {% macro rule_card(r) %}
+    <div class="rule-card rule-card-{{ r.status }}" onclick="openRuleModal({{ r | tojson }})">
+        <div class="rule-card-header">
+            <div class="rule-card-level level-{{ r.level }}">{{ r.level }}</div>
+            {% if r.parse_error %}
+            <span class="rule-error-badge">⚠ parse error</span>
+            {% endif %}
+        </div>
+        <div class="rule-card-title">{{ r.title[:55] }}</div>
+        <div class="rule-card-id">{{ r.rule_id }}</div>
+        <div class="rule-card-stats">
+            <span class="rstat">{{ r.hit_count }} hits</span>
+            <span class="rstat">{{ "%.3f"|format(r.rate_per_hour) }}/hr</span>
+            <span class="rstat fp-stat">FP~{{ "%.0f"|format(r.false_positive_estimate * 100) }}%</span>
+        </div>
+        {% if r.last_seen %}
+        <div class="rule-card-last">Last: {{ r.last_seen[:19].replace('T',' ') }}</div>
+        {% endif %}
+        {% if r.tactics %}
+        <div class="rule-card-tactics">
+            {% for t in r.tactics[:2] %}
+            <span class="tactic-mini-tag">{{ t }}</span>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+    {% endmacro %}
+
+    <div class="result-panel panel-never">
+        <div class="panel-header">
+            <span class="panel-dot dot-never"></span>
+            <h3 class="panel-title">Never Fired</h3>
+            <span class="panel-count">{{ report.never_fired | length }}</span>
+        </div>
+        <div class="panel-body">
+            {% if report.never_fired %}
+                {% for r in report.never_fired %}{{ rule_card(r) }}{% endfor %}
+            {% else %}
+                <div class="panel-empty">No rules in this category</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="result-panel panel-over">
+        <div class="panel-header">
+            <span class="panel-dot dot-over"></span>
+            <h3 class="panel-title">Overfiring</h3>
+            <span class="panel-count">{{ report.overfiring | length }}</span>
+        </div>
+        <div class="panel-body">
+            {% if report.overfiring %}
+                {% for r in report.overfiring %}{{ rule_card(r) }}{% endfor %}
+            {% else %}
+                <div class="panel-empty">No rules in this category</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="result-panel panel-healthy">
+        <div class="panel-header">
+            <span class="panel-dot dot-healthy"></span>
+            <h3 class="panel-title">Healthy</h3>
+            <span class="panel-count">{{ report.healthy | length }}</span>
+        </div>
+        <div class="panel-body">
+            {% if report.healthy %}
+                {% for r in report.healthy %}{{ rule_card(r) }}{% endfor %}
+            {% else %}
+                <div class="panel-empty">No rules in this category</div>
+            {% endif %}
+        </div>
+    </div>
+
+</div>
+
+<!-- Rule detail modal -->
+<div id="ruleModal" class="modal-overlay hidden">
+    <div class="modal modal-lg">
+        <div class="modal-header">
+            <div>
+                <div class="modal-rule-id" id="modalRuleId"></div>
+                <div class="modal-rule-title" id="modalRuleTitle"></div>
+            </div>
+            <button class="modal-close-btn" id="closeModalBtn">✕</button>
+        </div>
+        <div class="modal-body modal-body-scroll">
+            <div class="modal-tabs">
+                <button class="mtab-btn active" data-mtab="overview">Overview</button>
+                <button class="mtab-btn" data-mtab="events">Matched Events</button>
+                <button class="mtab-btn" data-mtab="suggestions">Tuning Suggestions</button>
+            </div>
+            <div class="mtab-content active" id="mtab-overview"></div>
+            <div class="mtab-content" id="mtab-events"></div>
+            <div class="mtab-content" id="mtab-suggestions"></div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function openRuleModal(rule) {
+    document.getElementById('modalRuleId').textContent    = rule.rule_id || '';
+    document.getElementById('modalRuleTitle').textContent = rule.title || '';
+
+    // Overview tab
+    const fpPct = Math.round((rule.false_positive_estimate || 0) * 100);
+    document.getElementById('mtab-overview').innerHTML = `
+        <div class="modal-stats-grid">
+            <div class="mstat"><div class="mstat-val">${rule.hit_count}</div><div class="mstat-lbl">Hit Count</div></div>
+            <div class="mstat"><div class="mstat-val">${(rule.rate_per_hour||0).toFixed(3)}</div><div class="mstat-lbl">Rate/Hour</div></div>
+            <div class="mstat"><div class="mstat-val">${fpPct}%</div><div class="mstat-lbl">FP Estimate</div></div>
+            <div class="mstat"><div class="mstat-val">${rule.level||'—'}</div><div class="mstat-lbl">Level</div></div>
+        </div>
+        ${rule.description ? `<div class="modal-description">${esc(rule.description)}</div>` : ''}
+        ${rule.last_seen ? `<div class="modal-last-seen">Last seen: ${esc(rule.last_seen)}</div>` : ''}
+        ${(rule.tags||[]).length ? `<div class="modal-tags">${rule.tags.map(t=>`<span class="tag-pill">${esc(t)}</span>`).join('')}</div>` : ''}
+        ${rule.parse_error ? `<div class="modal-error">⚠ Parse error: ${esc(rule.parse_error)}</div>` : ''}
+        ${rule.match_error ? `<div class="modal-error">⚠ Match error: ${esc(rule.match_error)}</div>` : ''}
+    `;
+
+    // Matched events tab
+    const evts = rule.matched_events || [];
+    document.getElementById('mtab-events').innerHTML = evts.length
+        ? `<div class="events-count">${evts.length} matched event(s) shown</div>` +
+          evts.map(e => `<pre class="event-pre">${esc(JSON.stringify(e, null, 2))}</pre>`).join('')
+        : '<div class="modal-empty">No matched events</div>';
+
+    // Tuning suggestions tab
+    const sugs = rule.tuning_suggestions || [];
+    document.getElementById('mtab-suggestions').innerHTML = sugs.length
+        ? sugs.map((s, i) => `<div class="suggestion-item"><span class="sug-num">${i+1}</span><span class="sug-text">${esc(s)}</span></div>`).join('')
+        : '<div class="modal-empty">No suggestions generated</div>';
+
+    // Reset to overview tab
+    document.querySelectorAll('.mtab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.mtab-content').forEach(c => c.classList.remove('active'));
+    document.querySelector('.mtab-btn[data-mtab="overview"]').classList.add('active');
+    document.getElementById('mtab-overview').classList.add('active');
+
+    document.getElementById('ruleModal').classList.remove('hidden');
+}
+
+function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+document.getElementById('closeModalBtn').addEventListener('click', () => {
+    document.getElementById('ruleModal').classList.add('hidden');
+});
+
+document.getElementById('ruleModal').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) e.currentTarget.classList.add('hidden');
+});
+
+document.querySelectorAll('.mtab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const tab = btn.getAttribute('data-mtab');
+        document.querySelectorAll('.mtab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.mtab-content').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        const el = document.getElementById('mtab-' + tab);
+        if (el) el.classList.add('active');
+    });
+});
+</script>
+{% endblock %}

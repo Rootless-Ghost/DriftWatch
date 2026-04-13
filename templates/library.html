@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% block title %}Report Library{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">
+        <span class="title-icon">📁</span>
+        Report Library
+    </h1>
+    <p class="page-subtitle">Browse and manage saved drift reports.</p>
+</div>
+
+<div class="card filter-card">
+    <div class="filter-row">
+        <input type="text" id="searchInput" class="form-input filter-input"
+               placeholder="Search reports by label…">
+        <button class="btn btn-secondary" id="clearBtn">Clear</button>
+    </div>
+    <div class="filter-stats">
+        <span id="resultCount" class="result-count">Loading…</span>
+        <button class="btn btn-danger btn-sm" id="clearAllBtn">🗑 Clear All</button>
+    </div>
+</div>
+
+<div class="card">
+    <div id="loadingState" class="loading-state">
+        <div class="spinner"></div>
+        <span>Loading reports…</span>
+    </div>
+    <div id="emptyState" class="empty-state hidden">
+        <div class="empty-icon">📂</div>
+        <h3>No reports saved yet</h3>
+        <p>Run a drift analysis from the <a href="/">main page</a> to get started.</p>
+    </div>
+    <table id="reportTable" class="data-table hidden">
+        <thead>
+            <tr>
+                <th>Label</th>
+                <th>Rules</th>
+                <th>Never Fired</th>
+                <th>Overfiring</th>
+                <th>Healthy</th>
+                <th>Coverage</th>
+                <th>Noise</th>
+                <th>Window</th>
+                <th>Events</th>
+                <th>Created</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody id="reportTableBody"></tbody>
+    </table>
+</div>
+
+<div id="pagination" class="pagination hidden">
+    <button class="btn btn-sm btn-secondary" id="prevPageBtn">← Prev</button>
+    <span id="pageInfo" class="page-info"></span>
+    <button class="btn btn-sm btn-secondary" id="nextPageBtn">Next →</button>
+</div>
+
+<div id="deleteModal" class="modal-overlay hidden">
+    <div class="modal">
+        <div class="modal-header"><h3>Delete Report</h3></div>
+        <div class="modal-body">
+            <p>Are you sure you want to delete this report?</p>
+            <p class="modal-detail" id="deleteDetail"></p>
+        </div>
+        <div class="modal-actions">
+            <button class="btn btn-secondary" id="cancelDeleteBtn">Cancel</button>
+            <button class="btn btn-danger" id="confirmDeleteBtn">Delete</button>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+let currentPage = 1, totalPages = 1, pendingDelete = null;
+const searchInput = document.getElementById('searchInput');
+
+function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function loadReports(page=1) {
+    const q = new URLSearchParams({ page, per_page: 25, search: searchInput.value.trim() });
+    document.getElementById('loadingState').classList.remove('hidden');
+    document.getElementById('emptyState').classList.add('hidden');
+    document.getElementById('reportTable').classList.add('hidden');
+
+    try {
+        const resp = await fetch(`/api/reports?${q}`);
+        const data = await resp.json();
+        document.getElementById('loadingState').classList.add('hidden');
+
+        if (!data.success || !data.items.length) {
+            document.getElementById('emptyState').classList.remove('hidden');
+            document.getElementById('resultCount').textContent = '0 reports';
+            document.getElementById('pagination').classList.add('hidden');
+            return;
+        }
+
+        currentPage = data.page;
+        totalPages  = data.pages;
+        document.getElementById('resultCount').textContent =
+            `${data.total} report${data.total !== 1 ? 's' : ''}`;
+
+        const tbody = document.getElementById('reportTableBody');
+        tbody.innerHTML = '';
+        data.items.forEach(r => {
+            const tr = document.createElement('tr');
+            const coverage = (r.coverage_pct || 0).toFixed(1);
+            const noise    = (r.noise_score || 0).toFixed(3);
+            const created  = r.created_at ? new Date(r.created_at).toLocaleDateString() : '—';
+            tr.innerHTML = `
+                <td class="label-cell">${esc(r.label || '—')}</td>
+                <td class="num-cell">${r.total_rules}</td>
+                <td class="num-cell never-cell">${r.never_fired}</td>
+                <td class="num-cell over-cell">${r.overfiring}</td>
+                <td class="num-cell healthy-cell">${r.healthy}</td>
+                <td class="num-cell">${coverage}%</td>
+                <td class="num-cell">${noise}</td>
+                <td class="num-cell">${r.time_window_hours}h</td>
+                <td class="num-cell">${(r.event_count||0).toLocaleString()}</td>
+                <td class="date-cell">${created}</td>
+                <td class="actions-cell">
+                    <a href="/report/${esc(r.id)}" class="btn btn-xs btn-primary">View</a>
+                    <button class="btn btn-xs btn-secondary" onclick="exportReport('${esc(r.id)}','json')">JSON</button>
+                    <button class="btn btn-xs btn-secondary" onclick="exportReport('${esc(r.id)}','markdown')">MD</button>
+                    <button class="btn btn-xs btn-danger" onclick="promptDelete('${esc(r.id)}','${esc(r.label||'')}')">✕</button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        document.getElementById('reportTable').classList.remove('hidden');
+        const pag = document.getElementById('pagination');
+        if (totalPages > 1) {
+            pag.classList.remove('hidden');
+            document.getElementById('pageInfo').textContent = `Page ${currentPage} of ${totalPages}`;
+            document.getElementById('prevPageBtn').disabled = currentPage <= 1;
+            document.getElementById('nextPageBtn').disabled = currentPage >= totalPages;
+        } else {
+            pag.classList.add('hidden');
+        }
+    } catch(err) {
+        document.getElementById('loadingState').classList.add('hidden');
+        document.getElementById('emptyState').classList.remove('hidden');
+    }
+}
+
+function exportReport(id, fmt) {
+    window.location.href = `/api/report/${id}/export?format=${fmt}`;
+}
+
+function promptDelete(id, label) {
+    pendingDelete = id;
+    document.getElementById('deleteDetail').textContent = label || id;
+    document.getElementById('deleteModal').classList.remove('hidden');
+}
+
+document.getElementById('cancelDeleteBtn').addEventListener('click', () => {
+    document.getElementById('deleteModal').classList.add('hidden');
+    pendingDelete = null;
+});
+
+document.getElementById('confirmDeleteBtn').addEventListener('click', async () => {
+    if (!pendingDelete) return;
+    await fetch(`/api/report/${pendingDelete}`, { method: 'DELETE' });
+    document.getElementById('deleteModal').classList.add('hidden');
+    pendingDelete = null;
+    loadReports(currentPage);
+});
+
+document.getElementById('clearAllBtn').addEventListener('click', () => {
+    if (!confirm('Delete ALL saved reports? This cannot be undone.')) return;
+    fetch('/api/reports?per_page=200').then(r=>r.json()).then(async data => {
+        for (const r of data.items) await fetch(`/api/report/${r.id}`, {method:'DELETE'});
+        loadReports(1);
+    });
+});
+
+document.getElementById('clearBtn').addEventListener('click', () => {
+    searchInput.value = '';
+    loadReports(1);
+});
+
+document.getElementById('prevPageBtn').addEventListener('click', () => { if (currentPage>1) loadReports(currentPage-1); });
+document.getElementById('nextPageBtn').addEventListener('click', () => { if (currentPage<totalPages) loadReports(currentPage+1); });
+
+let timer;
+searchInput.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(()=>loadReports(1), 400); });
+
+loadReports(1);
+</script>
+{% endblock %}
