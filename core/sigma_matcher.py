@@ -67,9 +67,9 @@ def match_rule_against_events(
                 matched_events.append(event)
                 if len(matched_events) >= 500:
                     break
-    except Exception as exc:
-        error = str(exc)
-        logger.warning("Match error in rule %r: %s", parsed_rule.get("title"), exc)
+    except Exception:
+        error = "Rule evaluation failed"
+        logger.exception("Match error in rule %r", parsed_rule.get("title"))
 
     return {
         "matched":        len(matched_events) > 0,
