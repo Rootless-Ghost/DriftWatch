@@ -1,0 +1,51 @@
+# DriftWatch — Baseline Sigma Rule Library
+#
+# This file defines the canonical set of Sigma rules DriftWatch uses for
+# detection coverage tracking in the purple-loop pipeline.
+#
+# Format: one or more Sigma rules separated by --- document markers.
+# Load via: POST /api/analyze with rules_yaml pointing to this file's contents,
+# or pass --rules-file to the CLI.
+#
+# Techniques tracked:
+#   T1021.006  Windows Remote Management — child process of wsmprovhost.exe
+#
+# Add new rules below with a --- separator. Keep one rule per document block.
+# ─────────────────────────────────────────────────────────────────────────────
+
+title: Child Process of WinRM Provider Host (wsmprovhost.exe)
+id: b3c7e8f1-2a4d-4b5c-9e0f-7a1d2c3b4e5f
+status: experimental
+description: >
+  Detects process creation events where the parent process is wsmprovhost.exe,
+  indicating that a command was executed on this host via Windows Remote Management
+  (WinRM / PS Remoting). Covers Sysmon EventID 1 and Windows Security EventID 4688.
+  Used by the purple-loop pipeline to validate detection coverage after live WinRM
+  testing via AtomicLoop T1021.006.
+references:
+  - https://attack.mitre.org/techniques/T1021/006/
+author: SigmaForge
+date: 2026/04/14
+tags:
+  - attack.lateral-movement
+  - attack.t1021_006
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    EventID:
+      - 1
+      - 4688
+    ParentImage|endswith: '\wsmprovhost.exe'
+  condition: selection
+level: high
+fields:
+  - Image
+  - CommandLine
+  - ParentImage
+  - ParentCommandLine
+  - User
+falsepositives:
+  - Legitimate remote administration via WinRM by IT operations staff
+  - Authorized red team or purple team exercises using AtomicLoop
