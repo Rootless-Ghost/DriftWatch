@@ -111,7 +111,7 @@ class DriftEngine:
         Returns:
             Full drift report dict.
         """
-        started_at = datetime.utcnow().isoformat() + "Z"
+        started_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         errors:     list[str] = []
         rule_results: list[dict] = []
 
