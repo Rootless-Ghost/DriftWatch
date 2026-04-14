@@ -183,9 +183,62 @@ See `core/field_mappings.py` for the complete mapping table.
 
 ---
 
+## Project Structure
+
+```
+DriftWatch/
+├── app.py              # Flask web application and REST API
+├── cli.py              # CLI — analyze / validate / export
+├── core/
+│   ├── analyzer.py     # DriftAnalyzer — rule evaluation and classification
+│   ├── field_mappings.py  # Sigma → ECS-lite field name mappings
+│   └── sigma_parser.py # Sigma YAML parser and condition evaluator
+├── templates/
+│   └── index.html      # Single-page web UI
+├── driftwatch.db       # SQLite report store (auto-created)
+├── config.yaml         # Optional config (copy from config.example.yaml)
+└── rules/              # Baseline Sigma rule library for pipeline use
+    └── baseline.yml    # Canonical rule set for purple-loop coverage validation
+```
+
+### rules/baseline.yml
+
+`baseline.yml` is a multi-document Sigma YAML file used by the purple-loop pipeline as the reference rule set for detection coverage validation. Each document block defines one Sigma rule; blocks are separated by `---`.
+
+**Techniques currently tracked:**
+
+| Rule title | Technique |
+|---|---|
+| Child Process of WinRM Provider Host (wsmprovhost.exe) | T1021.006 |
+
+**Adding a rule to baseline.yml:**
+
+1. Append `---` after the last rule in the file.
+2. Paste or write a valid Sigma rule block.
+3. Run `python cli.py --rules rules/baseline.yml --events <events.json>` to confirm it parses without errors.
+
+The file can also be passed directly to `POST /api/analyze` as the `rules_yaml` field body.
+
+---
+
 ## Nebula Forge Integration
 
-DriftWatch is registered in the Nebula Forge dashboard. Add to `nebula-dashboard/config.yaml`:
+DriftWatch is registered in the Nebula Forge dashboard and serves as the **detection-validation step** in the purple-loop pipeline.
+
+### purple-loop role
+
+In the purple-loop pipeline (`pipelines/purple-loop/main.py`), DriftWatch validates whether a Sigma rule fired after AtomicLoop executes an atomic technique:
+
+1. AtomicLoop runs the technique, captures ECS-lite events, and stores them internally under a `run_id`.
+2. purple-loop POSTs `{"run_id": "<uuid>", "sigma_rule": "<yaml>"}` to **AtomicLoop's** `/api/validate`, which proxies to DriftWatch.
+3. If no `run_id` is available (fallback), purple-loop POSTs `rules_yaml` + `events_json` directly to **DriftWatch's** `/api/validate`.
+4. DriftWatch returns `{"detection_fired": bool, "match_count": int, "gap_analysis": "..."}`.
+
+The baseline rule set for this pipeline lives in `rules/baseline.yml`.
+
+### Dashboard registration
+
+Add to `nebula-dashboard/config.yaml`:
 
 ```yaml
 tools:
