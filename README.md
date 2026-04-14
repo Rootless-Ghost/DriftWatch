@@ -1,8 +1,12 @@
+<div align="center">
+
 # DriftWatch — Detection Drift Analyzer
 
 Part of the **Nebula Forge** security tools suite.
 
 DriftWatch identifies detection drift in your Sigma rule sets by correlating rules against normalized log events (ECS-lite). It classifies every rule as **never-fired**, **overfiring**, or **healthy**, and generates per-rule stats, gap analysis, and tuning suggestions.
+
+ </div>
 
 ---
 
