@@ -22,20 +22,15 @@ DriftWatch identifies detection drift in your Sigma rule sets by correlating rul
 
 ## Screenshots
 
-### Drift Analysis Input
+### Drift Dashboard
 
-![Drift Analysis Input](docs/screenshots/analysis-input.png)
-*Paste or upload Sigma rules (single or multi-doc YAML) and ECS-lite events*
+![Drift Dashboard](docs/DrifWatch-Dashboard.png)
+
 
 ### Analysis Results — Rule Cards
 
-![Analysis Results — Rule Cards](docs/screenshots/rule-cards.png)
-*Never-fired, overfiring, and healthy rule cards with hit counts and rates*
+![DriftWatch Analysis](docs/DriffWatch-Results.png)
 
-### Rule Detail Modal
-
-![Rule Detail Modal](docs/screenshots/rule-detail.png)
-*Per-rule stats: hit count, rate/hr, FP estimate, matched event samples, and tuning suggestions*
 
 ---
 
