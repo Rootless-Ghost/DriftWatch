@@ -6,7 +6,36 @@ Part of the **Nebula Forge** security tools suite.
 
 DriftWatch identifies detection drift in your Sigma rule sets by correlating rules against normalized log events (ECS-lite). It classifies every rule as **never-fired**, **overfiring**, or **healthy**, and generates per-rule stats, gap analysis, and tuning suggestions.
 
+![version](https://img.shields.io/badge/version-v1.0.0-blueviolet?style=flat-square) ![port](https://img.shields.io/badge/port-5008-5d5d5d?style=flat-square) ![python](https://img.shields.io/badge/python-3.10+-3776AB?style=flat-square&logo=python) ![framework](https://img.shields.io/badge/framework-Flask-000000?style=flat-square&logo=flask) ![part%20of](https://img.shields.io/badge/part%20of-Nebula%20Forge-7c3aed?style=flat-square) ![license](https://img.shields.io/badge/license-MIT-green?style=flat-square)
+
  </div>
+
+---
+
+## Pipeline Position
+
+![Nebula Forge pipeline — DriftWatch highlighted](docs/pipeline.svg)
+
+> **purple-loop:** `AtomicLoop → LogNorm → ClusterIQ → HuntForge → DriftWatch → repeat`
+
+---
+
+## Screenshots
+
+### Drift Analysis Input
+
+![Drift Analysis Input](docs/screenshots/analysis-input.png)
+*Paste or upload Sigma rules (single or multi-doc YAML) and ECS-lite events*
+
+### Analysis Results — Rule Cards
+
+![Analysis Results — Rule Cards](docs/screenshots/rule-cards.png)
+*Never-fired, overfiring, and healthy rule cards with hit counts and rates*
+
+### Rule Detail Modal
+
+![Rule Detail Modal](docs/screenshots/rule-detail.png)
+*Per-rule stats: hit count, rate/hr, FP estimate, matched event samples, and tuning suggestions*
 
 ---
 
