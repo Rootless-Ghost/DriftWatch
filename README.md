@@ -24,12 +24,12 @@ DriftWatch identifies detection drift in your Sigma rule sets by correlating rul
 
 ### Drift Dashboard
 
-![Drift Dashboard](docs/DrifWatch-Dashboard.png)
+![Drift Dashboard](docs/DriftWatch-Dashboard.png)
 
 
 ### Analysis Results — Rule Cards
 
-![DriftWatch Analysis](docs/DriffWatch-Results.png)
+![DriftWatch Analysis](docs/DriftWatch-Results.png)
 
 
 ---
