@@ -14,7 +14,7 @@ DriftWatch identifies detection drift in your Sigma rule sets by correlating rul
 
 ## Pipeline Position
 
-![Nebula Forge pipeline — DriftWatch highlighted](docs/pipeline.svg)
+![Nebula Forge pipeline — DriftWatch highlighted](docs/Pipeline.svg)
 
 > **purple-loop:** `AtomicLoop → LogNorm → ClusterIQ → DriftWatch → HuntForge → repeat`
 
