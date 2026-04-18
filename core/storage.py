@@ -1,87 +1,61 @@
 """
-DriftWatch — SQLite storage layer.
+DriftWatch — PostgreSQL storage layer.
+
+Schema is managed externally via init-db/. Table expected: driftwatch_reports
 """
 
 import json
 import logging
-import sqlite3
+import os
 import uuid
 from datetime import datetime
+
+import psycopg2
+import psycopg2.extras
 
 logger = logging.getLogger("driftwatch.storage")
 
 
 class ReportStorage:
-    """Manages the SQLite database for saved drift reports."""
 
     def __init__(self, db_path: str = "./driftwatch.db"):
-        self.db_path = db_path
-        self._init_db()
+        self._url = os.environ.get("DATABASE_URL") or db_path
 
-    # ── Connection ─────────────────────────────────────────────────────────────
-
-    def _get_conn(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
-
-    def _init_db(self) -> None:
-        with self._get_conn() as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS reports (
-                    id              TEXT PRIMARY KEY,
-                    label           TEXT NOT NULL DEFAULT '',
-                    total_rules     INTEGER NOT NULL DEFAULT 0,
-                    never_fired     INTEGER NOT NULL DEFAULT 0,
-                    overfiring      INTEGER NOT NULL DEFAULT 0,
-                    healthy         INTEGER NOT NULL DEFAULT 0,
-                    coverage_pct    REAL NOT NULL DEFAULT 0,
-                    noise_score     REAL NOT NULL DEFAULT 0,
-                    time_window_hours INTEGER NOT NULL DEFAULT 168,
-                    event_count     INTEGER NOT NULL DEFAULT 0,
-                    report_json     TEXT NOT NULL,
-                    created_at      TEXT NOT NULL
-                )
-            """)
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_reports_created
-                ON reports (created_at)
-            """)
-            conn.commit()
-        logger.info("Storage initialised: %s", self.db_path)
+    def _get_conn(self):
+        return psycopg2.connect(self._url)
 
     # ── Write ──────────────────────────────────────────────────────────────────
 
     def save_report(self, report: dict) -> dict:
-        """Persist a drift report. Generates a new ID; returns updated report."""
         report_id = str(uuid.uuid4())
         now       = datetime.utcnow().isoformat() + "Z"
         summary   = report.get("summary", {})
 
         with self._get_conn() as conn:
-            conn.execute(
-                """
-                INSERT INTO reports
-                    (id, label, total_rules, never_fired, overfiring, healthy,
-                     coverage_pct, noise_score, time_window_hours, event_count,
-                     report_json, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    report_id,
-                    report.get("label", ""),
-                    summary.get("total_rules", 0),
-                    summary.get("never_fired_count", 0),
-                    summary.get("overfiring_count", 0),
-                    summary.get("healthy_count", 0),
-                    summary.get("coverage_pct", 0.0),
-                    summary.get("noise_score", 0.0),
-                    report.get("time_window_hours", 168),
-                    report.get("event_count", 0),
-                    json.dumps(report),
-                    now,
-                ),
-            )
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO driftwatch_reports
+                        (id, label, total_rules, never_fired, overfiring, healthy,
+                         coverage_pct, noise_score, time_window_hours, event_count,
+                         report_json, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        report_id,
+                        report.get("label", ""),
+                        summary.get("total_rules", 0),
+                        summary.get("never_fired_count", 0),
+                        summary.get("overfiring_count", 0),
+                        summary.get("healthy_count", 0),
+                        summary.get("coverage_pct", 0.0),
+                        summary.get("noise_score", 0.0),
+                        report.get("time_window_hours", 168),
+                        report.get("event_count", 0),
+                        json.dumps(report),
+                        now,
+                    ),
+                )
             conn.commit()
 
         report["id"]         = report_id
@@ -93,9 +67,11 @@ class ReportStorage:
 
     def get_report(self, report_id: str) -> dict | None:
         with self._get_conn() as conn:
-            row = conn.execute(
-                "SELECT * FROM reports WHERE id = ?", (report_id,)
-            ).fetchone()
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT * FROM driftwatch_reports WHERE id = %s", (report_id,)
+                )
+                row = cur.fetchone()
         if row is None:
             return None
         data = json.loads(row["report_json"])
@@ -113,29 +89,29 @@ class ReportStorage:
         params:     list      = []
 
         if search:
-            conditions.append("LOWER(label) LIKE LOWER(?)")
+            conditions.append("LOWER(label) LIKE LOWER(%s)")
             params.append(f"%{search}%")
 
         where  = ("WHERE " + " AND ".join(conditions)) if conditions else ""
         offset = (page - 1) * per_page
 
         with self._get_conn() as conn:
-            total = conn.execute(
-                f"SELECT COUNT(*) FROM reports {where}", params
-            ).fetchone()[0]
-            rows = conn.execute(
-                f"""
-                SELECT id, label, total_rules, never_fired, overfiring, healthy,
-                       coverage_pct, noise_score, time_window_hours, event_count,
-                       created_at
-                FROM reports {where}
-                ORDER BY created_at DESC
-                LIMIT ? OFFSET ?
-                """,
-                params + [per_page, offset],
-            ).fetchall()
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(f"SELECT COUNT(*) FROM driftwatch_reports {where}", params)
+                total = cur.fetchone()["count"]
+                cur.execute(
+                    f"""
+                    SELECT id, label, total_rules, never_fired, overfiring, healthy,
+                           coverage_pct, noise_score, time_window_hours, event_count,
+                           created_at
+                    FROM driftwatch_reports {where}
+                    ORDER BY created_at DESC
+                    LIMIT %s OFFSET %s
+                    """,
+                    params + [per_page, offset],
+                )
+                items = [dict(r) for r in cur.fetchall()]
 
-        items = [dict(r) for r in rows]
         return {
             "items":    items,
             "total":    total,
@@ -148,12 +124,18 @@ class ReportStorage:
 
     def delete_report(self, report_id: str) -> bool:
         with self._get_conn() as conn:
-            cur = conn.execute("DELETE FROM reports WHERE id = ?", (report_id,))
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM driftwatch_reports WHERE id = %s", (report_id,)
+                )
+                deleted = cur.rowcount > 0
             conn.commit()
-        return cur.rowcount > 0
+        return deleted
 
     def clear_all(self) -> int:
         with self._get_conn() as conn:
-            cur = conn.execute("DELETE FROM reports")
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM driftwatch_reports")
+                count = cur.rowcount
             conn.commit()
-        return cur.rowcount
+        return count
