@@ -61,6 +61,29 @@ Open [http://127.0.0.1:5008](http://127.0.0.1:5008).
 
 ---
 
+## Docker (Nebula Forge suite)
+
+This tool runs as a containerized service in the Nebula Forge suite.
+The recommended way to start everything together:
+
+```bash
+# From the Nebula-Forge repo root
+cp .env.example .env          # add secrets (NVD_API_KEY, ATOMICLOOP_API_KEY, etc.)
+docker compose up -d          # starts all services including driftwatch
+```
+
+**Access:** http://localhost:5008
+
+**Standalone container:**
+```bash
+docker build -t driftwatch .
+docker run -p 5008:5008 \
+  -e DATABASE_URL=postgresql://nebula:changeme@localhost:5432/nebula_forge \
+  driftwatch
+```
+
+---
+
 ## Usage
 
 ### Web UI
