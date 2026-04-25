@@ -57,14 +57,13 @@ def match_rule_against_events(
     matched_events = []
     error          = None
 
-    # Filter events to time window if timestamps present
-    windowed = _filter_by_time_window(events, time_window_hours)
+    flat_events = [(event, _flatten_event(event)) for event in events]
+    windowed = _filter_by_time_window(flat_events, time_window_hours)
 
     try:
-        for event in windowed:
-            flat = _flatten_event(event)
+        for event, flat in windowed:
             if _evaluate_detection(detection, event, flat):
-                matched_events.append(event)
+                matched_events.append((event, flat))
                 if len(matched_events) >= 500:
                     break
     except Exception:
@@ -81,10 +80,10 @@ def match_rule_against_events(
 
 # ── Time window ───────────────────────────────────────────────────────────────
 
-def _filter_by_time_window(events: list[dict], hours: int) -> list[dict]:
+def _filter_by_time_window(flat_events: list[tuple[dict, dict]], hours: int) -> list[tuple[dict, dict]]:
     """Return events within the last `hours` hours. If no timestamps found, return all."""
     if not hours or hours <= 0:
-        return events
+        return flat_events
 
     ts_fields = ["@timestamp", "timestamp", "event.created", "created_at"]
     now = datetime.now(timezone.utc)
@@ -92,8 +91,7 @@ def _filter_by_time_window(events: list[dict], hours: int) -> list[dict]:
     has_timestamps = False
     result = []
 
-    for event in events:
-        flat = _flatten_event(event)
+    for event, flat in flat_events:
         ts_val = None
         for f in ts_fields:
             if f in flat:
@@ -101,7 +99,7 @@ def _filter_by_time_window(events: list[dict], hours: int) -> list[dict]:
                 break
 
         if ts_val is None:
-            result.append(event)
+            result.append((event, flat))
             continue
 
         has_timestamps = True
@@ -118,11 +116,11 @@ def _filter_by_time_window(events: list[dict], hours: int) -> list[dict]:
                     ev_time = ev_time.replace(tzinfo=timezone.utc)
             delta_hours = (now - ev_time).total_seconds() / 3600
             if delta_hours <= hours:
-                result.append(event)
+                result.append((event, flat))
         except Exception:
-            result.append(event)
+            result.append((event, flat))
 
-    return result if has_timestamps else events
+    return result if has_timestamps else flat_events
 
 
 # ── Event flattening ──────────────────────────────────────────────────────────

@@ -15,7 +15,7 @@ import logging
 from datetime import datetime, timezone
 
 from .sigma_parser  import parse_sigma_rule, extract_mitre_tactics
-from .sigma_matcher import match_rule_against_events, _flatten_event
+from .sigma_matcher import match_rule_against_events
 from .tuning        import (
     classify_rule, estimate_fp, build_suggestions,
     build_gap_analysis,
@@ -28,12 +28,11 @@ logger = logging.getLogger("driftwatch.engine")
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _last_seen(matched_events: list[dict]) -> str | None:
+def _last_seen(matched_events: list[tuple[dict, dict]]) -> str | None:
     """Return the most recent timestamp string from a list of matched events."""
     ts_fields = ("@timestamp", "timestamp", "event.created", "created_at")
     latest = None
-    for ev in matched_events:
-        flat = _flatten_event(ev)
+    for ev, flat in matched_events:
         for f in ts_fields:
             if f in flat:
                 try:
@@ -45,13 +44,12 @@ def _last_seen(matched_events: list[dict]) -> str | None:
     return latest
 
 
-def _build_hit_timeline(matched_events: list[dict], time_window_hours: int) -> list[dict]:
+def _build_hit_timeline(matched_events: list[tuple[dict, dict]], time_window_hours: int) -> list[dict]:
     """Group match hits into hourly buckets for the hit timeline."""
     from collections import Counter
 
     buckets: Counter = Counter()
-    for ev in matched_events:
-        flat = _flatten_event(ev)
+    for ev, flat in matched_events:
         for f in ("@timestamp", "timestamp", "event.created"):
             if f in flat:
                 try:
@@ -211,7 +209,7 @@ class DriftEngine:
             "last_seen":             last_seen_ts,
             "false_positive_estimate": round(fp_est, 2),
             "tuning_suggestions":    suggestions,
-            "matched_events":        match_result["matched_events"][:10],
+            "matched_events":        [ev for ev, _ in match_result["matched_events"][:10]],
             "hit_timeline":          timeline,
             "parse_error":           parsed.get("_parse_error"),
             "match_error":           match_result.get("error"),
@@ -246,7 +244,7 @@ class DriftEngine:
             "success":                True,
             "fired":                  match["matched"],
             "match_count":            match["match_count"],
-            "matched_events":         match["matched_events"],
+            "matched_events":         [ev for ev, _ in match["matched_events"]],
             "false_positive_estimate": round(fp_est, 2),
             "parse_error":            parsed.get("_parse_error"),
         }
